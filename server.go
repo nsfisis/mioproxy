@@ -44,9 +44,13 @@ func newMultipleReverseProxyServer(ps []ProxyConfig) *multipleReverseProxyServer
 	}
 }
 
-func (s *multipleReverseProxyServer) tryServeHTTP(w http.ResponseWriter, r *http.Request) bool {
+func (s *multipleReverseProxyServer) tryServeHTTP(
+	w http.ResponseWriter,
+	r *http.Request,
+	hostWithoutPort string,
+) bool {
 	for _, rule := range s.rules {
-		if r.Host == rule.fromHost {
+		if rule.fromHost == hostWithoutPort {
 			rule.proxy.ServeHTTP(w, r)
 			return true
 		}
@@ -79,7 +83,13 @@ func NewServer(cfg *ServerConfig) *Server {
 	} else {
 		reverseProxyServer := newMultipleReverseProxyServer(cfg.Proxies)
 		h.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			found := reverseProxyServer.tryServeHTTP(w, r)
+			// r.Host may have ":port" part.
+			hostWithoutPort, _, err := net.SplitHostPort(r.Host)
+			if err != nil {
+				http.Error(w, "400 invalid host", http.StatusBadRequest)
+				return
+			}
+			found := reverseProxyServer.tryServeHTTP(w, r, hostWithoutPort)
 			if !found {
 				http.NotFound(w, r)
 			}
