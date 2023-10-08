@@ -30,9 +30,10 @@ type ACMEChallengeConfig struct {
 }
 
 type ProxyConfig struct {
-	Name string
-	From ProxyFromConfig
-	To   ProxyToConfig
+	Name      string
+	From      ProxyFromConfig
+	To        ProxyToConfig
+	BasicAuth *ProxyBasicAuthConfig
 }
 
 type ProxyFromConfig struct {
@@ -43,6 +44,11 @@ type ProxyFromConfig struct {
 type ProxyToConfig struct {
 	Host string
 	Port int
+}
+
+type ProxyBasicAuthConfig struct {
+	Realm          string
+	CredentialFile string
 }
 
 type InternalHCLConfig struct {
@@ -66,9 +72,10 @@ type InternalHCLACMEChallengeConfig struct {
 }
 
 type InternalHCLProxyConfig struct {
-	Name string                     `hcl:"name,label"`
-	From InternalHCLProxyFromConfig `hcl:"from,block"`
-	To   InternalHCLProxyToConfig   `hcl:"to,block"`
+	Name  string                       `hcl:"name,label"`
+	From  InternalHCLProxyFromConfig   `hcl:"from,block"`
+	To    InternalHCLProxyToConfig     `hcl:"to,block"`
+	Auths []InternalHCLProxyAuthConfig `hcl:"auth,block"`
 }
 
 type InternalHCLProxyFromConfig struct {
@@ -79,6 +86,12 @@ type InternalHCLProxyFromConfig struct {
 type InternalHCLProxyToConfig struct {
 	Host string `hcl:"host"`
 	Port int    `hcl:"port"`
+}
+
+type InternalHCLProxyAuthConfig struct {
+	Scheme         string `hcl:"scheme,label"`
+	Realm          string `hcl:"realm"`
+	CredentialFile string `hcl:"credential_file"`
 }
 
 func fromHCLConfigToConfig(hclConfig *InternalHCLConfig) *Config {
@@ -92,6 +105,14 @@ func fromHCLConfigToConfig(hclConfig *InternalHCLConfig) *Config {
 		}
 		proxies := make([]ProxyConfig, len(s.Proxies))
 		for j, p := range s.Proxies {
+			var basicAuth *ProxyBasicAuthConfig
+			if len(p.Auths) != 0 {
+				auth := p.Auths[0]
+				basicAuth = &ProxyBasicAuthConfig{
+					Realm:          auth.Realm,
+					CredentialFile: auth.CredentialFile,
+				}
+			}
 			proxies[j] = ProxyConfig{
 				Name: p.Name,
 				From: ProxyFromConfig{
@@ -102,6 +123,7 @@ func fromHCLConfigToConfig(hclConfig *InternalHCLConfig) *Config {
 					Host: p.To.Host,
 					Port: p.To.Port,
 				},
+				BasicAuth: basicAuth,
 			}
 		}
 		servers[i] = ServerConfig{
@@ -198,6 +220,21 @@ func LoadConfig(fileName string) (*Config, error) {
 			_, err := url.Parse(fmt.Sprintf("http://%s:%d", p.To.Host, p.To.Port))
 			if err != nil {
 				return nil, fmt.Errorf("Invalid host or port: %s:%d", p.To.Host, p.To.Port)
+			}
+			if 2 <= len(p.Auths) {
+				return nil, fmt.Errorf("Too many auth blocks found")
+			}
+			if len(p.Auths) == 1 {
+				auth := p.Auths[0]
+				if auth.Scheme != "basic" {
+					return nil, fmt.Errorf("Only basic auth is supported")
+				}
+				if auth.Realm == "" {
+					return nil, fmt.Errorf("realm is required")
+				}
+				if auth.CredentialFile == "" {
+					return nil, fmt.Errorf("credential_file is required")
+				}
 			}
 		}
 	}

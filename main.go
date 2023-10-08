@@ -74,6 +74,23 @@ func downgradeToUser(uname string) error {
 }
 
 func main() {
+	// Generate password mode
+	if len(os.Args) == 3 && os.Args[1] == "-genpw" {
+		userName := os.Args[2]
+		fmt.Fprintf(os.Stderr, "Enter password for user %s: ", userName)
+		password, err := ReadPasswordFromUserInput()
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			log.Fatalf("%s", err)
+		}
+		passwordHash, err := GeneratePasswordHash(password)
+		if err != nil {
+			log.Fatalf("%s", err)
+		}
+		fmt.Println(userName + ":" + passwordHash)
+		return
+	}
+
 	// Check mode
 	if len(os.Args) == 3 && os.Args[1] == "-check" {
 		configFileName := os.Args[2]
@@ -118,7 +135,16 @@ func main() {
 		if s.TLSKeyFile != "" {
 			s.TLSKeyFile = filepath.Join(configFileDir, s.TLSKeyFile)
 		}
-		servers = append(servers, NewServer(&s))
+		for _, p := range s.Proxies {
+			if p.BasicAuth != nil {
+				p.BasicAuth.CredentialFile = filepath.Join(configFileDir, p.BasicAuth.CredentialFile)
+			}
+		}
+		server, err := NewServer(&s)
+		if err != nil {
+			log.Fatalf("Failed to create server: %s", err)
+		}
+		servers = append(servers, server)
 	}
 
 	// Downgrade to non-root user.
