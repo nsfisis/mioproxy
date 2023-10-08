@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"strings"
 )
 
 type multipleReverseProxyServer struct {
@@ -16,8 +17,20 @@ type multipleReverseProxyServer struct {
 
 type rewriteRule struct {
 	fromHost string
+	fromPath string
 	toUrl    *url.URL
 	proxy    *httputil.ReverseProxy
+}
+
+func (r *rewriteRule) matches(host, path string) bool {
+	ret := true
+	if r.fromHost != "" {
+		ret = ret && r.fromHost == host
+	}
+	if r.fromPath != "" {
+		ret = ret && strings.HasPrefix(path+"/", r.fromPath)
+	}
+	return ret
 }
 
 func newMultipleReverseProxyServer(ps []ProxyConfig) *multipleReverseProxyServer {
@@ -30,6 +43,7 @@ func newMultipleReverseProxyServer(ps []ProxyConfig) *multipleReverseProxyServer
 		}
 		rules = append(rules, rewriteRule{
 			fromHost: p.From.Host,
+			fromPath: p.From.Path,
 			toUrl:    targetUrl,
 			proxy: &httputil.ReverseProxy{
 				Rewrite: func(r *httputil.ProxyRequest) {
@@ -50,7 +64,7 @@ func (s *multipleReverseProxyServer) tryServeHTTP(
 	hostWithoutPort string,
 ) bool {
 	for _, rule := range s.rules {
-		if rule.fromHost == hostWithoutPort {
+		if rule.matches(hostWithoutPort, r.URL.Path) {
 			rule.proxy.ServeHTTP(w, r)
 			return true
 		}

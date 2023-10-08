@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/netip"
 	"net/url"
+	"strings"
 
 	"github.com/hashicorp/hcl/v2/hclsimple"
 )
@@ -36,6 +37,7 @@ type ProxyConfig struct {
 
 type ProxyFromConfig struct {
 	Host string
+	Path string
 }
 
 type ProxyToConfig struct {
@@ -70,7 +72,8 @@ type InternalHCLProxyConfig struct {
 }
 
 type InternalHCLProxyFromConfig struct {
-	Host string `hcl:"host"`
+	Host string `hcl:"host,optional"`
+	Path string `hcl:"path,optional"`
 }
 
 type InternalHCLProxyToConfig struct {
@@ -93,6 +96,7 @@ func fromHCLConfigToConfig(hclConfig *InternalHCLConfig) *Config {
 				Name: p.Name,
 				From: ProxyFromConfig{
 					Host: p.From.Host,
+					Path: p.From.Path,
 				},
 				To: ProxyToConfig{
 					Host: p.To.Host,
@@ -180,6 +184,17 @@ func LoadConfig(fileName string) (*Config, error) {
 		}
 
 		for _, p := range server.Proxies {
+			if p.From.Path != "" {
+				if !strings.HasPrefix(p.From.Path, "/") {
+					return nil, fmt.Errorf("Path must start with '/'")
+				}
+				if !strings.HasSuffix(p.From.Path, "/") {
+					return nil, fmt.Errorf("Path must end with '/'")
+				}
+			}
+			if p.From.Host == "" && p.From.Path == "" {
+				return nil, fmt.Errorf("Either host or path must be specified")
+			}
 			_, err := url.Parse(fmt.Sprintf("http://%s:%d", p.To.Host, p.To.Port))
 			if err != nil {
 				return nil, fmt.Errorf("Invalid host or port: %s:%d", p.To.Host, p.To.Port)
