@@ -24,14 +24,17 @@ type rewriteRule struct {
 }
 
 func (r *rewriteRule) matches(host, path string) bool {
-	ret := true
 	if r.fromHost != "" {
-		ret = ret && r.fromHost == host
+		if r.fromHost != host {
+			return false
+		}
 	}
 	if r.fromPath != "" {
-		ret = ret && strings.HasPrefix(path+"/", r.fromPath)
+		if !strings.HasPrefix(path+"/", r.fromPath) {
+			return false
+		}
 	}
-	return ret
+	return true
 }
 
 func basicAuthHandler(handler http.Handler, realm, username, passwordHash string) http.Handler {
@@ -95,10 +98,9 @@ func newMultipleReverseProxyServer(ps []ProxyConfig) (*multipleReverseProxyServe
 func (s *multipleReverseProxyServer) tryServeHTTP(
 	w http.ResponseWriter,
 	r *http.Request,
-	hostWithoutPort string,
 ) bool {
 	for _, rule := range s.rules {
-		if rule.matches(hostWithoutPort, r.URL.Path) {
+		if rule.matches(r.Host, r.URL.Path) {
 			rule.proxy.ServeHTTP(w, r)
 			return true
 		}
@@ -134,13 +136,7 @@ func NewServer(cfg *ServerConfig) (*Server, error) {
 			return nil, err
 		}
 		h.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			// r.Host may have ":port" part.
-			hostWithoutPort, _, err := net.SplitHostPort(r.Host)
-			if err != nil {
-				http.Error(w, "400 invalid host", http.StatusBadRequest)
-				return
-			}
-			found := reverseProxyServer.tryServeHTTP(w, r, hostWithoutPort)
+			found := reverseProxyServer.tryServeHTTP(w, r)
 			if !found {
 				http.NotFound(w, r)
 			}

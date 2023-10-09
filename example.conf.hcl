@@ -4,7 +4,7 @@ server http {
 
     proxy a {
         from {
-            host = "a.localhost"
+            host = "a.localhost:8000"
         }
         to {
             host = "127.0.0.1"
@@ -30,7 +30,7 @@ server http {
 
     proxy c {
         from {
-            host = "c.localhost"
+            host = "c.localhost:8000"
             path = "/c/"
         }
         to {
