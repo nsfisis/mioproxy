@@ -64,6 +64,33 @@ func newMultipleReverseProxyServer(ps []ProxyConfig) (*multipleReverseProxyServe
 				r.SetURL(targetUrl)
 				r.SetXForwarded()
 			},
+			ModifyResponse: func(r *http.Response) error {
+				if r.StatusCode < 300 || 400 <= r.StatusCode {
+					return nil
+				}
+
+				// If the response is redirect and has location header, rewrite it.
+				location := r.Header.Get("Location")
+				if location == "" {
+					return nil
+				}
+				locationUrl, err := url.Parse(location)
+				if err != nil {
+					return nil
+				}
+				if !locationUrl.IsAbs() {
+					return nil
+				}
+				if locationUrl.Hostname() != targetUrl.Hostname() {
+					return nil
+				}
+				locationUrl.Host = p.From.Host
+				if locationUrl.Scheme == "http" {
+					locationUrl.Scheme = "https"
+				}
+				r.Header.Set("Location", locationUrl.String())
+				return nil
+			},
 		}
 		if p.BasicAuth != nil {
 			credentialFileContent, err := os.ReadFile(p.BasicAuth.CredentialFile)
