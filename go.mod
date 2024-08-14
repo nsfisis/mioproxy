@@ -1,6 +1,6 @@
 module github.com/nsfisis/mioproxy
 
-go 1.20
+go 1.22
 
 require (
 	github.com/hashicorp/hcl/v2 v2.18.0
