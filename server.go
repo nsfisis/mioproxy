@@ -52,9 +52,9 @@ func basicAuthHandler(handler http.Handler, realm, username, passwordHash string
 	})
 }
 
-func newMultipleReverseProxyServer(ps []ProxyConfig) (*multipleReverseProxyServer, error) {
+func newMultipleReverseProxyServer(cfg *ServerConfig) (*multipleReverseProxyServer, error) {
 	var rules []rewriteRule
-	for _, p := range ps {
+	for _, p := range cfg.Proxies {
 		targetUrl, err := url.Parse(fmt.Sprintf("http://%s:%d", p.To.Host, p.To.Port))
 		if err != nil {
 			return nil, err
@@ -85,7 +85,7 @@ func newMultipleReverseProxyServer(ps []ProxyConfig) (*multipleReverseProxyServe
 					return nil
 				}
 				locationUrl.Host = p.From.Host
-				if locationUrl.Scheme == "http" {
+				if cfg.RedirectToHTTPS && locationUrl.Scheme == "http" {
 					locationUrl.Scheme = "https"
 				}
 				r.Header.Set("Location", locationUrl.String())
@@ -158,7 +158,7 @@ func NewServer(cfg *ServerConfig) (*Server, error) {
 			http.Redirect(w, r, target.String(), http.StatusMovedPermanently)
 		})
 	} else {
-		reverseProxyServer, err := newMultipleReverseProxyServer(cfg.Proxies)
+		reverseProxyServer, err := newMultipleReverseProxyServer(cfg)
 		if err != nil {
 			return nil, err
 		}
