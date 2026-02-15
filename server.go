@@ -9,6 +9,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -55,7 +56,7 @@ func basicAuthHandler(handler http.Handler, realm, username, passwordHash string
 func newMultipleReverseProxyServer(cfg *ServerConfig) (*multipleReverseProxyServer, error) {
 	var rules []rewriteRule
 	for _, p := range cfg.Proxies {
-		targetUrl, err := url.Parse(fmt.Sprintf("http://%s:%d", p.To.Host, p.To.Port))
+		targetUrl, err := url.Parse("http://" + net.JoinHostPort(p.To.Host, strconv.Itoa(p.To.Port)))
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +185,7 @@ func NewServer(cfg *ServerConfig) (*Server, error) {
 	return &Server{
 		tlsEnabled: cfg.Protocol == "https",
 		s: http.Server{
-			Addr:      fmt.Sprintf("%s:%d", cfg.Host, cfg.Port),
+			Addr:      fmt.Sprintf("%s:%d", strings.Join(cfg.Hosts, ","), cfg.Port),
 			Handler:   h,
 			TLSConfig: tlsConfig,
 		},
@@ -195,18 +196,36 @@ func (s *Server) Label() string {
 	return s.s.Addr
 }
 
-func (s *Server) Serve(listener net.Listener) error {
-	if s.tlsEnabled {
-		return s.s.ServeTLS(listener, "", "")
-	} else {
-		return s.s.Serve(listener)
+func (s *Server) Serve(listeners []net.Listener) error {
+	errC := make(chan error, len(listeners))
+	for _, l := range listeners {
+		go func() {
+			if s.tlsEnabled {
+				errC <- s.s.ServeTLS(l, "", "")
+			} else {
+				errC <- s.s.Serve(l)
+			}
+		}()
 	}
+	return <-errC
 }
 
 func (s *Server) Shutdown(ctx context.Context) {
 	s.s.Shutdown(ctx)
 }
 
-func NewListener(cfg *ServerConfig) (net.Listener, error) {
-	return net.Listen("tcp", fmt.Sprintf("%s:%d", cfg.Host, cfg.Port))
+func NewListeners(cfg *ServerConfig) ([]net.Listener, error) {
+	port := strconv.Itoa(cfg.Port)
+	listeners := make([]net.Listener, 0, len(cfg.Hosts))
+	for _, host := range cfg.Hosts {
+		l, err := net.Listen("tcp", net.JoinHostPort(host, port))
+		if err != nil {
+			for _, prev := range listeners {
+				prev.Close()
+			}
+			return nil, err
+		}
+		listeners = append(listeners, l)
+	}
+	return listeners, nil
 }

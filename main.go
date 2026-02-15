@@ -18,14 +18,14 @@ import (
 
 func startServer(
 	s *Server,
-	listener net.Listener,
+	listeners []net.Listener,
 	wg *sync.WaitGroup,
 	sigCtx context.Context,
 ) {
 	defer wg.Done()
 
 	go func() {
-		err := s.Serve(listener)
+		err := s.Serve(listeners)
 		if err != nil && err != http.ErrServerClosed {
 			log.Fatalf("Failed to start server (%s): %s", s.Label(), err)
 		}
@@ -113,13 +113,13 @@ func main() {
 	configFileDir := filepath.Dir(configFileName)
 
 	// Set up listeners.
-	var listeners []net.Listener
+	var listeners [][]net.Listener
 	for _, s := range config.Servers {
-		l, err := NewListener(&s)
+		ls, err := NewListeners(&s)
 		if err != nil {
-			log.Fatalf("Failed to create listener (%s:%d): %s", s.Host, s.Port, err)
+			log.Fatalf("Failed to create listeners (%v:%d): %s", s.Hosts, s.Port, err)
 		}
-		listeners = append(listeners, l)
+		listeners = append(listeners, ls)
 	}
 
 	// Set up servers.

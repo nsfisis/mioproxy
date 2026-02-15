@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/netip"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2/hclsimple"
@@ -16,7 +18,7 @@ type Config struct {
 
 type ServerConfig struct {
 	Protocol        string
-	Host            string
+	Hosts           []string
 	Port            int
 	RedirectToHTTPS bool
 	ACMEChallenge   *ACMEChallengeConfig
@@ -58,7 +60,7 @@ type InternalHCLConfig struct {
 
 type InternalHCLServerConfig struct {
 	Protocol        string                           `hcl:"protocol,label"`
-	Host            string                           `hcl:"host"`
+	Hosts           []string                         `hcl:"hosts"`
 	Port            int                              `hcl:"port"`
 	RedirectToHTTPS bool                             `hcl:"redirect_to_https,optional"`
 	ACMEChallenge   []InternalHCLACMEChallengeConfig `hcl:"acme_challenge,block"`
@@ -128,7 +130,7 @@ func fromHCLConfigToConfig(hclConfig *InternalHCLConfig) *Config {
 		}
 		servers[i] = ServerConfig{
 			Protocol:        s.Protocol,
-			Host:            s.Host,
+			Hosts:           s.Hosts,
 			Port:            s.Port,
 			RedirectToHTTPS: s.RedirectToHTTPS,
 			ACMEChallenge:   acmeChallenge,
@@ -167,9 +169,14 @@ func LoadConfig(fileName string) (*Config, error) {
 			return nil, fmt.Errorf("Invalid protocol %s", server.Protocol)
 		}
 
-		_, err = netip.ParseAddr(server.Host)
-		if err != nil {
-			return nil, fmt.Errorf("Invalid host %s", server.Host)
+		if len(server.Hosts) == 0 {
+			return nil, fmt.Errorf("At least one host address is required")
+		}
+		for _, host := range server.Hosts {
+			_, err = netip.ParseAddr(host)
+			if err != nil {
+				return nil, fmt.Errorf("Invalid host %s", host)
+			}
 		}
 
 		if len(server.ACMEChallenge) != 0 && len(server.ACMEChallenge) != 1 {
@@ -217,9 +224,10 @@ func LoadConfig(fileName string) (*Config, error) {
 			if p.From.Host == "" && p.From.Path == "" {
 				return nil, fmt.Errorf("Either host or path must be specified")
 			}
-			_, err := url.Parse(fmt.Sprintf("http://%s:%d", p.To.Host, p.To.Port))
+			hostAndPort := net.JoinHostPort(p.To.Host, strconv.Itoa(p.To.Port))
+			_, err := url.Parse("http://" + hostAndPort)
 			if err != nil {
-				return nil, fmt.Errorf("Invalid host or port: %s:%d", p.To.Host, p.To.Port)
+				return nil, fmt.Errorf("Invalid host or port: %s", hostAndPort)
 			}
 			if 2 <= len(p.Auths) {
 				return nil, fmt.Errorf("Too many auth blocks found")

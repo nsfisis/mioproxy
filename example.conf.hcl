@@ -1,5 +1,7 @@
 server http {
-    host = "127.0.0.1"
+    hosts = ["127.0.0.1"]
+    # hosts = ["::1"]            # Listen on localhost (IPv6)
+    # hosts = ["0.0.0.0", "::"]  # Listen on all interfaces (IPv4 + IPv6)
     port = 8000
 
     proxy a {
